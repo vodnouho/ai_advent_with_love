@@ -6,6 +6,13 @@ import java.time.Duration
 
 import HttpClientUtils
 
+import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
+
+// Исправление ошибки компиляции: добавлена аннотация для подавления предупреждений о неиспользуемых импортах
+@Suppress("unused")
+
 open class GigaChatClient(private val oauthClient: OAuthTokenClient) {
 
     private val client: HttpClient = if (oauthClient is OAuthTokenClient && oauthClient::class.java.declaredFields.any { it.name == "certPath" }) {
@@ -29,15 +36,20 @@ open class GigaChatClient(private val oauthClient: OAuthTokenClient) {
 
     private val apiUrl = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
 
-    fun sendPrompt(prompt: String): String? {
+    fun sendPrompt(prompt: String, systemPrompt: String = ""): String? {
         val accessToken = oauthClient.getAccessToken() ?: run {
             println("Не удалось получить access token")
             return null
         }
 
+        val systemPromptContent = (javaClass.classLoader.getResource("system_prompt.txt")?.readText() ?: "").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r")
         val jsonBody = """{
             "model": "GigaChat",
             "messages": [
+                {
+                    "role": "system",
+                    "content": "$systemPromptContent"
+                },
                 {
                     "role": "user",
                     "content": "$prompt"
@@ -74,8 +86,25 @@ open class GigaChatClient(private val oauthClient: OAuthTokenClient) {
     }
 
     protected fun parseResponseContent(responseBody: String): String? {
-        // Ищем содержимое в поле "content" в JSON-ответе
-        val contentRegex = Regex("""\"content\"\s*:\s*\"([^"]*)\"""")
-        return contentRegex.find(responseBody)?.groupValues?.get(1)
+        // Используем Jackson для парсинга JSON
+        val mapper = ObjectMapper().registerKotlinModule()
+        try {
+            val rootNode = mapper.readTree(responseBody.replace("\n", "\\n"))
+            // Ищем содержимое в поле "content" в JSON-ответе
+            val choicesNode = rootNode.get("choices")
+            if (choicesNode != null && choicesNode.isArray && choicesNode.size() > 0) {
+                val messageNode = choicesNode.get(0).get("message")
+                if (messageNode != null) {
+                    val contentNode = messageNode.get("content")
+                    if (contentNode != null && !contentNode.isNull) {
+                        return contentNode.asText()
+                    }
+                }
+            }
+            return null
+        } catch (e: Exception) {
+            println("Ошибка при парсинге JSON: ${e.message}")
+            return null
+        }
     }
 }
