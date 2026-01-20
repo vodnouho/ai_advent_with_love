@@ -15,6 +15,7 @@ fun main() {
     var input: String
     do {
         print("> ")
+        // TODO: экранировать ввод кавычек пользователем
         input = readLine().toString()
         if (input.lowercase() != "exit") {
             val response = gigaChatClient.sendPrompt(input)
