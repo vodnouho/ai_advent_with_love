@@ -36,13 +36,14 @@ open class GigaChatClient(private val oauthClient: OAuthTokenClient) {
 
     private val apiUrl = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
 
-    fun sendPrompt(prompt: String, systemPrompt: String = "", temperature: Double = 0.7): String? {
+    fun sendPrompt(prompt: String, systemPrompt: String = "", temperature: Double = 0.87): String? {
+
         val accessToken = oauthClient.getAccessToken() ?: run {
             println("Не удалось получить access token")
             return null
         }
 
-        val systemPromptContent = (javaClass.classLoader.getResource("system_prompt.txt")?.readText() ?: "").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r")
+        val systemPromptContent = ""//(javaClass.classLoader.getResource("system_prompt.txt")?.readText() ?: "").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r")
         val jsonBody = """{
             "model": "GigaChat",
             "messages": [
@@ -84,6 +85,8 @@ open class GigaChatClient(private val oauthClient: OAuthTokenClient) {
             null
         }
     }
+
+
 
     protected fun parseResponseContent(responseBody: String): String? {
         // Используем Jackson для парсинга JSON
