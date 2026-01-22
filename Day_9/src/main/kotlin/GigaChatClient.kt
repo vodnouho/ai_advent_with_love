@@ -12,7 +12,8 @@ import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 
 data class Message(
     val role: String,
-    val content: String
+    val content: String,
+    val tokens: Int = 0
 )
 
 data class GigaChatResponse(
@@ -20,11 +21,11 @@ data class GigaChatResponse(
     val promptTokens: Int = 0,
     val completionTokens: Int = 0,
     val totalTokens: Int = 0,
-    val contextSize: Int = 0
+    val contextSize: Int = 0,
+    val contextTokens: Int = 0
 )
 
-// Исправление ошибки компиляции: добавлена аннотация для подавления предупреждений о неиспользуемых импортах
-@Suppress("unused")
+
 
 open class GigaChatClient(private val oauthClient: OAuthTokenClient) {
     private val messages = mutableListOf<Message>()
@@ -68,10 +69,7 @@ open class GigaChatClient(private val oauthClient: OAuthTokenClient) {
         // Добавляем пользовательское сообщение в историю
         messages.add(Message("user", prompt))
         
-        // Ограничиваем количество сообщений
-        while (messages.size > maxMessages) {
-            messages.removeAt(1) // Удаляем самое старое сообщение (после system)
-        }
+
         
         // Формируем полный список сообщений для отправки
         val messagesToSend = mutableListOf<Message>()
@@ -105,7 +103,7 @@ $messagesJson
             "top_p": 0.9,
             "n": 1,
             "stream": false,
-            "max_tokens": 10240
+            "max_tokens": 1024
         }""".trimIndent()
 
         val request = HttpRequest.newBuilder()
@@ -171,6 +169,8 @@ $messagesJson
         }
     }
     
+    private var totalContextTokens = 0
+
     protected fun parseResponseContent(responseBody: String): GigaChatResponse? {
         // Используем Jackson для парсинга JSON
         val mapper = ObjectMapper().registerKotlinModule()
@@ -198,31 +198,58 @@ $messagesJson
             
             // Добавляем ответ в историю
             if (content != null) {
-                messages.add(Message("assistant", content))
+                messages.add(Message("assistant", content, totalTokens))
             }
             
             // Вычисляем размер контекста (количество сообщений)
             val contextSize = messages.size
             
-            return GigaChatResponse(content, promptTokens, completionTokens, totalTokens, contextSize)
+            // Обновляем общее количество токенов в контексте
+            totalContextTokens = messages.sumOf { it.tokens }
+            
+            return GigaChatResponse(content, promptTokens, completionTokens, totalTokens, contextSize, totalContextTokens)
         } catch (e: Exception) {
             println("Ошибка при парсинге JSON: ${e.message}")
             return null
         }
     }
 
+
+
     fun compressContext() {
         if (messages.size <= 2) return // Нечего сжимать
         
-        // Сохраняем системное сообщение (если есть) и последние 2 сообщения
+        // Сохраняем системное сообщение (если есть)
         val systemMessage = messages.getOrNull(0)?.takeIf { it.role == "system" }
         val lastMessages = messages.takeLast(2)
         
+        // Формируем полный контекст для summarization
+        val contextToSummarize = messages.filter { it.role != "system" }.joinToString("\n") { "${it.role}: ${it.content}" }
+        
+        // Создаем промпт для summarization
+        val summaryPrompt = "Сделай краткое резюме следующего диалога, сохранив основную суть и ключевые моменты. " +
+                "Представь результат в виде 2-3 предложений:\n\n$contextToSummarize"
+        
+        // Отправляем запрос на summarization
+        val summaryResponse = sendPrompt(summaryPrompt, 0.5)
+        
+        // Очищаем историю
         messages.clear()
         
+        // Восстанавливаем системное сообщение
         if (systemMessage != null) {
             messages.add(systemMessage)
         }
+        
+        // Добавляем summary как системное сообщение
+        if (summaryResponse?.content != null) {
+            messages.add(Message("assistant", "Контекст диалога: ${summaryResponse.content}"))
+            println("\nСоздано резюме диалога: ${summaryResponse.content}")
+        }
+        
+        // Восстанавливаем последние 2 сообщения
         messages.addAll(lastMessages)
     }
+
+    fun isContextFull(): Boolean = messages.size >= maxMessages
 }

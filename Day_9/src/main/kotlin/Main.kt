@@ -19,10 +19,19 @@ fun main() {
     }
 
     var temperature = 0.87
-    println("Доступные команды:")
-    println("  /exit - выход из программы")
-    println("  /temp <значение> - установка температуры (0.0-2.0)")
-    println("  /file <имя_файла> - отправка содержимого файла из src/main/resources")
+    var totalTokensUsed = 0
+
+    fun showAvailableCommands() {
+        println("Доступные команды:")
+        println("  /exit - выход из программы")
+        println("  /temp <значение> - установка температуры (0.0-2.0)")
+        println("  /file <имя_файла> - отправка содержимого файла из src/main/resources")
+        println("  /system_prompt <текст> - установка системного промпта")
+        println("  /summary - создание резюме истории диалога")
+        println("  /help - показать доступные команды")
+    }
+
+    showAvailableCommands()
     println("Введите запрос для GigaChat или команду:")
     var input: String
     do {
@@ -31,6 +40,7 @@ fun main() {
 
         when {
             input.lowercase() == "exit" || input == "/exit" -> break
+            input == "/help" -> showAvailableCommands()
             input.startsWith("/temp") -> {
                 val tempStr = input.substring(5).trim()
                 if (tempStr.isEmpty()) {
@@ -59,8 +69,11 @@ fun main() {
                     if (response != null) {
                         println("GigaChat: ${response.content ?: "Пустой ответ"}")
                         println("-----------------------------------------------------------------------------------------")
+                        val tokensUsed = response.totalTokens
+                        totalTokensUsed += tokensUsed
                         println("Токены - запрос: ${response.promptTokens}, ответ: ${response.completionTokens}, всего: ${response.totalTokens}")
-                        println("Размер контекста: ${response.contextSize} сообщений")
+                        println("Общее количество использованных токенов: $totalTokensUsed")
+                        println("Размер контекста: ${response.contextSize} сообщений (${response.contextTokens} токенов)")
                     } else {
                         println("GigaChat: Ошибка при обработке файла")
                     }
@@ -76,10 +89,10 @@ fun main() {
                     println("Системный промпт обновлён")
                 }
             }
-            input == "/compress" -> {
+            input == "/summary" -> {
                 gigaChatClient.compressContext()
                 val contextSize = gigaChatClient.getContextSize()
-                println("История диалога сжата. Текущий размер контекста: $contextSize сообщений")
+                println("Текущий размер контекста: $contextSize сообщений")
             }
             else -> {
                 // TODO: экранировать ввод кавычек пользователем
@@ -87,11 +100,16 @@ fun main() {
                 if (response != null) {
                     println("GigaChat: ${response.content ?: "Пустой ответ"}")
                     println("-----------------------------------------------------------------------------------------")
+                    val tokensUsed = response.totalTokens
+                    totalTokensUsed += tokensUsed
                     println("Токены - запрос: ${response.promptTokens}, ответ: ${response.completionTokens}, всего: ${response.totalTokens}")
-                    println("Размер контекста: ${response.contextSize} сообщений")
+                    println("Общее количество использованных токенов: $totalTokensUsed")
+                    println("Размер контекста: ${response.contextSize} сообщений (${response.contextTokens} токенов)")
                 } else {
                     println("GigaChat: Ошибка ответа")
                 }
+                if (gigaChatClient.isContextFull())
+                    gigaChatClient.compressContext()
             }
         }
     } while (true)
