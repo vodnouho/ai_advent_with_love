@@ -30,6 +30,15 @@ data class GigaChatResponse(
 
 
 open class GigaChatClient(private val oauthClient: OAuthTokenClient) {
+    private val tools = mutableListOf<tools.MCPTool>()
+
+    fun registerTool(tool: tools.MCPTool) {
+        tools.add(tool)
+    }
+    
+    fun toolCount(): Int = tools.size
+    
+    fun listTools(): List<tools.MCPTool> = tools
     private val messages = mutableListOf<Message>()
 
     fun getContextSize(): Int = messages.size
@@ -76,11 +85,22 @@ open class GigaChatClient(private val oauthClient: OAuthTokenClient) {
         // Формируем полный список сообщений для отправки
         val messagesToSend = mutableListOf<Message>()
 
+        // Подготавливаем описание инструментов
+        val toolsDescription = if (tools.isNotEmpty()) {
+            "\n\nДоступные инструменты:\n" + tools.joinToString("\n") { "- ${it.name}: ${it.description}" } +
+                    "\n\nДля использования инструмента ответ должен содержать JSON в формате: {\"tool\": \"имя_инструмента\", \"arguments\": {\"аргумент1\": \"значение1\"}}"
+        } else {
+            ""
+        }
+
         // Добавляем системный промпт, если он задан
         if (systemPrompt.isNotBlank()) {
             if (messages.isEmpty() || messages[0].role != "system") {
-                messagesToSend.add(Message("system", systemPrompt))
+                messagesToSend.add(Message("system", systemPrompt + toolsDescription))
             }
+        } else if (tools.isNotEmpty()) {
+            // Добавляем системное сообщение с описанием инструментов, если нет другого системного промпта
+            messagesToSend.add(Message("system", "Вы — ассистент, который может использовать инструменты для выполнения задач." + toolsDescription))
         }
 
         // Добавляем историю сообщений
@@ -189,6 +209,57 @@ $messagesJson
                     if (contentNode != null && !contentNode.isNull) {
                         content = contentNode.asText()
                     }
+                }
+            }
+            
+            // Проверяем, не содержит ли ответ вызов инструмента
+            if (content != null && content.trim().startsWith("{\"tool\"")) {
+                try {
+                    val toolCall = mapper.readTree(content)
+                    val toolName = toolCall.get("tool")?.asText()
+                    val argumentsNode = toolCall.get("arguments")
+                    
+                    if (toolName != null && argumentsNode != null) {
+                        val tool = tools.find { it.name == toolName }
+                        if (tool != null) {
+                            // Преобразуем JsonNode в Map<String, Any>
+                            val arguments = mutableMapOf<String, Any>()
+                            argumentsNode.fields().forEachRemaining { (key, value) ->
+                                arguments[key] = when {
+                                    value.isTextual -> value.asText()
+                                    value.isInt -> value.asInt()
+                                    value.isDouble -> value.asDouble()
+                                    value.isBoolean -> value.asBoolean()
+                                    else -> value.toString()
+                                }
+                            }
+                            
+                            // Выполняем инструмент и добавляем результат как сообщение ассистента
+                            val toolResult = tool.execute(arguments)
+                            messages.add(Message("assistant", "Результат вызова инструмента $toolName: $toolResult"))
+                            
+                            // Возвращаем ответ, указывая, что контекст был обновлен
+                            val usageNode = rootNode.get("usage")
+                            val promptTokens = if (usageNode != null) usageNode.get("prompt_tokens")?.asInt() ?: 0 else 0
+                            val completionTokens = if (usageNode != null) usageNode.get("completion_tokens")?.asInt() ?: 0 else 0
+                            val totalTokens = if (usageNode != null) usageNode.get("total_tokens")?.asInt() ?: 0 else 0
+                            
+                            return GigaChatResponse(
+                                content = "Инструмент $toolName был вызван. Результат добавлен в контекст.",
+                                promptTokens = promptTokens,
+                                completionTokens = completionTokens,
+                                totalTokens = totalTokens,
+                                contextSize = messages.size,
+                                contextTokens = totalContextTokens
+                            )
+                        } else {
+                            println("Инструмент не найден: $toolName")
+                        }
+                    } else {
+                        println("Некорректный формат вызова инструмента: $content")
+                    }
+                } catch (e: Exception) {
+                    println("Ошибка при обработке вызова инструмента: ${e.message}")
                 }
             }
             

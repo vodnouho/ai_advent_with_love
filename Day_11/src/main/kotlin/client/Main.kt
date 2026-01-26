@@ -17,6 +17,9 @@ fun main() {
         certPath = certPath
     )
     val gigaChatClient = GigaChatClient(oauthClient)
+    
+    // Регистрируем MCP инструменты
+    gigaChatClient.registerTool(tools.DateTimeTool())
 
     // Загружаем системный промпт из файла при старте, если он существует
     val systemPromptFile = java.io.File("src/main/resources/system_prompt.txt")
@@ -36,6 +39,7 @@ fun main() {
         println("  /system_prompt <текст> - установка системного промпта")
         println("  /summary - создание резюме истории диалога")
         println("  /datetime - получение текущей даты и времени")
+        println("  /tools - показать доступные инструменты")
         println("  /help - показать доступные команды")
     }
 
@@ -101,6 +105,16 @@ fun main() {
                 gigaChatClient.compressContext()
                 val contextSize = gigaChatClient.getContextSize()
                 println("Текущий размер контекста: $contextSize сообщений")
+            }
+            input == "/tools" -> {
+                if (gigaChatClient.toolCount() > 0) {
+                    println("Доступные инструменты:")
+                    gigaChatClient.listTools().forEach { tool ->
+                        println("- ${tool.name}: ${tool.description}")
+                    }
+                } else {
+                    println("Нет зарегистрированных инструментов")
+                }
             }
             input == "/datetime" -> {
                 try {
