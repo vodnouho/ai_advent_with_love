@@ -1,7 +1,9 @@
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
 
-import HttpClientUtils
+import client.HttpClientUtils
+
+import client.OAuthTokenClient
 
 class OAuthTokenClientTest {
 
@@ -59,7 +61,7 @@ class OAuthTokenClientTest {
         val expiryField = OAuthTokenClient::class.java.getDeclaredField("tokenExpiryTime")
         expiryField.isAccessible = true
         
-        assertEquals(0, expiryField.get(client))
+        assertEquals(0L, expiryField.get(client))
     }
 
     @Test
@@ -80,6 +82,6 @@ class OAuthTokenClientTest {
         expiryField.isAccessible = true
 
         assertNull(tokenField.get(client))
-        assertEquals(0, expiryField.get(client))
+        assertEquals(0L, expiryField.get(client))
     }
 }

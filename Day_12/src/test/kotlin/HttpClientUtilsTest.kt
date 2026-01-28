@@ -1,3 +1,5 @@
+import client.HttpClientUtils
+
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
 import java.time.Duration
@@ -10,7 +12,7 @@ class HttpClientUtilsTest {
         // но проверяем, что метод существует и можно получить клиент с кастомным таймаутом
         
         // Проверяем, что можно создать HttpClient с кастомным таймаутом
-        val client = HttpClientUtils.createHttpClientWithCustomTrust("src/test/resources/test-cert.cer", Duration.ofSeconds(5))
+        val client = HttpClientUtils.createHttpClientWithCustomTrust("src/main/resources/russian_trusted_root_ca.cer", Duration.ofSeconds(5))
         
         // Нельзя напрямую проверить таймаут, но можно проверить, что клиент не null
         assertNotNull(client)
@@ -19,7 +21,7 @@ class HttpClientUtilsTest {
     @Test
     fun `createHttpClientWithCustomTrust uses default timeout when not specified`() {
         // Проверяем, что можно создать HttpClient с таймаутом по умолчанию
-        val client = HttpClientUtils.createHttpClientWithCustomTrust("src/test/resources/test-cert.cer")
+        val client = HttpClientUtils.createHttpClientWithCustomTrust("src/main/resources/russian_trusted_root_ca.cer")
         
         // Нельзя напрямую проверить таймаут, но можно проверить, что клиент не null
         assertNotNull(client)

@@ -1,7 +1,10 @@
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
 
-import HttpClientUtils
+import client.HttpClientUtils
+
+import client.GigaChatClient
+import client.OAuthTokenClient
 
 class GigaChatClientTest {
 
@@ -61,6 +64,6 @@ class GigaChatClientTest {
 class GigaChatClientStub(oauthClient: OAuthTokenClient) : GigaChatClient(oauthClient) {
     // Метод-обертка для тестирования приватного метода parseResponseContent
     fun parseResponseContentForTest(responseBody: String): String? {
-        return parseResponseContent(responseBody)
+        return parseResponseContent(responseBody)?.content
     }
 }

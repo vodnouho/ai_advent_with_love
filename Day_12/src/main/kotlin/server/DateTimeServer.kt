@@ -7,9 +7,13 @@ import java.io.IOException
 import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
 import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.Executors
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import java.io.BufferedReader
+import java.io.InputStreamReader
 
 class DateTimeServer(val port: Int = 8080) {
     private var server: HttpServer? = null
@@ -17,9 +21,16 @@ class DateTimeServer(val port: Int = 8080) {
     fun start() {
         try {
             server = HttpServer.create(InetSocketAddress(port), 0)
-            server?.createContext("/datetime", DateTimeHandler())
-            server?.createContext("/tools", ToolsHandler()) // Добавляем обработчик для /tools
             server?.executor = Executors.newFixedThreadPool(10)
+            server?.createContext("/datetime", DateTimeHandler())
+            server?.createContext("/tools/list", ToolsListHandler()) // Список доступных инструментов
+            server?.createContext("/tools/call", ToolsCallHandler()) // Выполнение инструментов
+            // Обновляем сообщение о запуске сервера
+            println("MCP-сервер запущен на порту $port")
+            println("Доступно:")
+            println("  - http://localhost:$port/datetime - текущее время")
+            println("  - http://localhost:$port/tools/list - список инструментов")
+            println("  - http://localhost:$port/tools/call - выполнение инструментов")
             server?.start()
             println("MCP-сервер запущен на порту $port")
             println("Доступно: http://localhost:$port/datetime")
@@ -37,81 +48,70 @@ class DateTimeServer(val port: Int = 8080) {
     }
 }
 
-class ToolsHandler : HttpHandler {
-    private val toolDescription = "{\n" +
-            "  \"name\": \"datetime_server\",\n" +
-            "  \"description\": \"Получает текущую дату и время в указанной временной зоне. Если временная зона не указана, используется UTC.\",\n" +
-            "  \"parameters\": {\n" +
-            "    \"type\": \"object\",\n" +
-            "    \"properties\": {\n" +
-            "      \"timezone\": {\n" +
-            "        \"type\": \"string\",\n" +
-            "        \"description\": \"Временная зона (например, \"\\\"Europe/Moscow\\\"\"), по умолчанию — UTC\"\n" +
-            "      }\n" +
-            "    },\n" +
-            "    \"required\": []\n" +
-            "  }\n" +
-            "}"
+class ToolsListHandler : HttpHandler {
+    private val objectMapper = jacksonObjectMapper()
 
     override fun handle(exchange: HttpExchange) {
         if (exchange.requestMethod == "GET") {
-            val jsonResponse = "{\n" +
-                    "  \"tools\": [\n" +
-                    "    $toolDescription\n" +
-                    "  ]\n" +
-                    "}"
-            sendResponse(exchange, jsonResponse)
+            val tools = listOf(
+                mapOf(
+                    "name" to "get_current_datetime",
+                    "description" to "Получает текущую дату и время в указанной временной зоне. Если временная зона не указана, используется UTC.",
+                    "inputSchema" to mapOf(
+                        "type" to "object",
+                        "properties" to mapOf(
+                            "timezone" to mapOf(
+                                "type" to "string",
+                                "description" to "Временная зона в формате IANA (например, \"Europe/Moscow\", \"America/New_York\"). По умолчанию используется UTC."
+                            )
+                        ),
+                        "required" to emptyList<String>()
+                    )
+                )
+            )
+            sendResponse(exchange, objectMapper.writeValueAsString(tools))
         } else {
             sendResponse(exchange, "{\"error\": \"Метод не поддерживается\"}", 405)
         }
     }
     
     private fun sendResponse(exchange: HttpExchange, response: String, statusCode: Int = 200) {
-        exchange.responseHeaders.set("Content-Type", "application/json")
-        exchange.sendResponseHeaders(statusCode, response.length.toLong())
+        exchange.responseHeaders.set("Content-Type", "application/json; charset=utf-8")
+        val bytes = response.toByteArray(Charsets.UTF_8)
+        exchange.sendResponseHeaders(statusCode, bytes.size.toLong())
         val os: OutputStream = exchange.responseBody
-        os.write(response.toByteArray())
+        os.write(bytes)
         os.close()
     }
 }
 
 class DateTimeHandler : HttpHandler {
     private val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'")
-    private val epochFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
+    private val objectMapper = jacksonObjectMapper()
 
     override fun handle(exchange: HttpExchange) {
         if (exchange.requestMethod == "GET") {
-            val startTime = System.currentTimeMillis()
             val currentDatetime = ZonedDateTime.now(ZoneOffset.UTC)
             val currentDatetimeStr = currentDatetime.format(formatter)
             val timestamp = currentDatetime.toInstant().toEpochMilli()
 
-            // Формируем JSON-ответ в формате MCP
-            val jsonResponse = "{\n" +
-                    "  \"tool\": \"datetime_server\",\n" +
-                    "  \"version\": \"1.0\",\n" +
-                    "  \"data\": {\n" +
-                    "    \"current_datetime\": \"$currentDatetimeStr\",\n" +
-                    "    \"timezone\": \"UTC\",\n" +
-                    "    \"timestamp\": $timestamp\n" +
-                    "  },\n" +
-                    "  \"metadata\": {\n" +
-                    "    \"server_time\": \"$currentDatetimeStr\",\n" +
-                    "    \"response_time_ms\": ${System.currentTimeMillis() - startTime}\n" +
-                    "  }\n" +
-                    "}"
-
-            sendResponse(exchange, jsonResponse)
+            val response = mapOf(
+                "current_datetime" to currentDatetimeStr,
+                "timezone" to "UTC",
+                "timestamp" to timestamp
+            )
+            sendResponse(exchange, objectMapper.writeValueAsString(response))
         } else {
             sendResponse(exchange, "{\"error\": \"Метод не поддерживается\"}", 405)
         }
     }
 
     private fun sendResponse(exchange: HttpExchange, response: String, statusCode: Int = 200) {
-        exchange.responseHeaders.set("Content-Type", "application/json")
-        exchange.sendResponseHeaders(statusCode, response.length.toLong())
+        exchange.responseHeaders.set("Content-Type", "application/json; charset=utf-8")
+        val bytes = response.toByteArray(Charsets.UTF_8)
+        exchange.sendResponseHeaders(statusCode, bytes.size.toLong())
         val os: OutputStream = exchange.responseBody
-        os.write(response.toByteArray())
+        os.write(bytes)
         os.close()
     }
 }
